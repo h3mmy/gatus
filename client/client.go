@@ -28,6 +28,7 @@ import (
 	"github.com/registrobr/rdap/protocol"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/websocket"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 const (
@@ -375,9 +376,17 @@ func ShouldRunPingerAsPrivileged() bool {
 		return true
 	}
 
-	// To actually check for cap_net_raw capabilities, we would need to add "kernel.org/pub/linux/libs/security/libcap/cap" to gatus.
-	// As a backstop we can simply check the effective user id and run as privileged when running as root
-	return os.Geteuid() == 0
+	c := cap.GetProc()
+	hasCapNetRaw, err := c.GetFlag(cap.Effective, cap.NET_RAW)
+	if err != nil {
+		logr.Warnf("error checking posix capabilities for CAP_NET_RAW: %v", err)
+	}
+	hasCapNetAdmin, err := c.GetFlag(cap.Effective, cap.NET_ADMIN)
+	if err != nil {
+		logr.Warnf("error checking posix capabilities for CAP_NET_ADMIN, failling back to uid check: %v", err)
+		return os.Geteuid() == 0
+	}
+	return hasCapNetRaw || hasCapNetAdmin
 }
 
 // QueryWebSocket opens a websocket connection, write `body` and return a message from the server
